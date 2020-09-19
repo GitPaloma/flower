@@ -699,7 +699,7 @@ Check health of celery queue throughput against set threashold
                 self.application.events,
                 started_start=start):
 
-            if not task.eta and task.succeeded and task.started:
+            if not task.eta and task.succeeded and task.received:
                 # Skip any scheduled tasks that have wait times by design, are unfinished, failed, or low-priority
                 n = n + 1
                 wait_time = (task.started - task.received)
