@@ -650,3 +650,81 @@ Get a task info
             response['worker'] = task.worker.hostname
 
         self.write(response)
+
+class TasksHealth(BaseTaskHandler):
+    @web.authenticated
+    def get(self):
+        """
+Check health of celery queue throughput against set threashold
+
+**Example request**:
+
+.. sourcecode:: http
+
+  GET /api/tasks/health HTTP/1.1
+  Host: localhost:5555
+
+**Example response**:
+
+.. sourcecode:: http
+
+  HTTP/1.1 200 OK
+  Content-Length: 44
+  Content-Type: application/json; charset=UTF-8
+
+  {
+      "count_tasks": 300
+      "count_skipped": 125
+      "avg_wait_time": 0.24
+      "avg_run_time": 5.2
+  }
+
+:reqheader Authorization: optional OAuth token to authenticate
+:statuscode 200: no error
+:statuscode 500: average task wait time + average task run time is above the threashold set in environment variable
+        """
+        n = 0
+        skip = 0
+        sum_wait_time = 0
+        sum_run_time = 0
+
+        # TODO: time window
+        received_start = None
+        received_end = None
+        
+        for task_id, task in tasks.iter_tasks(
+                self.application.events,
+                received_start=received_start,
+                received_end=received_end):
+
+            if not task.eta and task.succeeded and task.started:
+                # Skip any scheduled tasks that have wait times by design, are unfinished, failed, or low-priority
+                n = n + 1
+                wait_time = (task.started - task.received)
+                if wait_time > 60:
+                    print("Long Waiting Task:", f'{wait_time:.3f}s', task)
+                sum_wait_time = sum_wait_time + wait_time
+                sum_run_time = sum_run_time + (task.succeeded - task.started)
+            else:
+                skip = skip + 1
+
+        avg_wait_time = None
+        avg_run_time = None
+        if n:
+          avg_wait_time = (sum_wait_time / n)
+          avg_run_time = (sum_run_time / n)
+
+        result = {
+          "count_tasks": n,
+          "count_skipped": skip,
+          "avg_wait_time": avg_wait_time,
+          "avg_run_time": avg_run_time
+        }
+
+        # TODO: threashold
+        THREASHOLD = 20
+
+        if (avg_wait_time + avg_run_time) > THREASHOLD:
+            raise HTTPError(500, result)
+        else:
+            self.write(result)
