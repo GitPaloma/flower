@@ -15,7 +15,10 @@ def iter_tasks(events, limit=None, offset=0, type=None, worker=None, state=None,
         tasks = sort_tasks(tasks, sort_by)
 
     def convert(x):
-        return time.mktime(datetime.datetime.strptime(x, '%Y-%m-%d %H:%M').timetuple())
+        if isinstance(x, str):
+            return time.mktime(datetime.datetime.strptime(x, '%Y-%m-%d %H:%M').timetuple())
+        if isinstance(x, datetime.datetime):
+            return time.mktime(x.timetuple())
 
     search_terms = parse_search_terms(search or {})
 

@@ -1,7 +1,8 @@
 import json
 import logging
+import os
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from tornado import web
 from tornado import gen
@@ -688,14 +689,15 @@ Check health of celery queue throughput against set threashold
         sum_wait_time = 0
         sum_run_time = 0
 
+        time_diff  = int(os.environ.get('HEALTH_SAMPLE_WINDOW_SECONDS', '300'))
+        threashold = float(os.environ.get('HEALTH_THREASHOLD', '20'))
+
         # TODO: time window
-        received_start = None
-        received_end = None
+        start = datetime.now() - timedelta(seconds=time_diff)
         
         for task_id, task in tasks.iter_tasks(
                 self.application.events,
-                received_start=received_start,
-                received_end=received_end):
+                started_start=start):
 
             if not task.eta and task.succeeded and task.started:
                 # Skip any scheduled tasks that have wait times by design, are unfinished, failed, or low-priority
@@ -708,8 +710,8 @@ Check health of celery queue throughput against set threashold
             else:
                 skip = skip + 1
 
-        avg_wait_time = None
-        avg_run_time = None
+        avg_wait_time = 0
+        avg_run_time = 0
         if n:
           avg_wait_time = (sum_wait_time / n)
           avg_run_time = (sum_run_time / n)
@@ -721,10 +723,8 @@ Check health of celery queue throughput against set threashold
           "avg_run_time": avg_run_time
         }
 
-        # TODO: threashold
-        THREASHOLD = 20
-
-        if (avg_wait_time + avg_run_time) > THREASHOLD:
-            raise HTTPError(500, result)
+        if (avg_wait_time + avg_run_time) > threashold:
+            self.set_status(500)
+            self.write(result)
         else:
             self.write(result)
