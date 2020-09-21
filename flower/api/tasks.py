@@ -684,28 +684,28 @@ Check health of celery queue throughput against set threashold
 :statuscode 200: no error
 :statuscode 500: average task wait time + average task run time is above the threashold set in environment variable
         """
+        window = self.get_argument('window', '300')
+        name   = self.get_argument('name', None)
+        threashold = os.environ.get('HEALTH_THREASHOLD', None)
+
+        window = window and int(window)   
+        threashold = threashold and float(threashold)
+
         n = 0
         skip = 0
         sum_wait_time = 0
         sum_run_time = 0
 
-        time_diff  = int(os.environ.get('HEALTH_SAMPLE_WINDOW_SECONDS', '300'))
-        threashold = float(os.environ.get('HEALTH_THREASHOLD', '20'))
-
-        # TODO: time window
-        start = datetime.now() - timedelta(seconds=time_diff)
+        start = datetime.now() - timedelta(seconds=window)
         
         for task_id, task in tasks.iter_tasks(
                 self.application.events,
                 started_start=start):
-
-            if not task.eta and task.succeeded and task.received:
-                # Skip any scheduled tasks that have wait times by design, are unfinished, failed, or low-priority
+            if not task.eta and task.succeeded and task.received and not (name and task.name != name):
+                # Skip any scheduled tasks that have wait times by design, are unfinished, or failed
+                # If name param provided, skip tasks that don't match by name
                 n = n + 1
-                wait_time = (task.started - task.received)
-                if wait_time > 60:
-                    print("Long Waiting Task:", f'{wait_time:.3f}s', task)
-                sum_wait_time = sum_wait_time + wait_time
+                sum_wait_time = sum_wait_time + (task.started - task.received)
                 sum_run_time = sum_run_time + (task.succeeded - task.started)
             else:
                 skip = skip + 1
@@ -723,7 +723,7 @@ Check health of celery queue throughput against set threashold
           "avg_run_time": avg_run_time
         }
 
-        if (avg_wait_time + avg_run_time) > threashold:
+        if threashold and (avg_wait_time + avg_run_time) > threashold:
             self.set_status(500)
             self.write(result)
         else:
