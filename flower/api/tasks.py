@@ -774,9 +774,7 @@ Check celery queue max wait time of waiting jobs (not scheduled; jobs that will 
         sum_wait_time = 0
         max_wait_time = 0
         
-        for task_id, task in tasks.iter_tasks(
-                self.application.events,
-                started_start=start):
+        for task_id, task in tasks.iter_tasks(self.application.events):
             if not task.eta and not task.started and not (name and task.name != name):
                 # Skip any scheduled tasks that have wait times by design
                 # If name param provided, skip tasks that don't match by name
