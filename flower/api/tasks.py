@@ -773,8 +773,6 @@ Check celery queue max wait time of waiting jobs (not scheduled; jobs that will 
         n = 0
         sum_wait_time = 0
         max_wait_time = 0
-
-        start = datetime.now() - timedelta(seconds=window)
         
         for task_id, task in tasks.iter_tasks(
                 self.application.events,
