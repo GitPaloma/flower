@@ -680,13 +680,16 @@ Check health of celery queue throughput against set threashold
       "avg_run_time": 5.2
   }
 
+:query window: only compute for tasks that were started and finished within last $window seconds
+:query name: only compute for tasks with taskname
+:query threashold: an optional parameter that will cause endpoint to throw 500 if result beyond acceptable range
 :reqheader Authorization: optional OAuth token to authenticate
 :statuscode 200: no error
 :statuscode 500: average task wait time + average task run time is above the threashold set in environment variable
         """
-        window = self.get_argument('window', '300')
-        name   = self.get_argument('name', None)
-        threashold = os.environ.get('HEALTH_THREASHOLD', None)
+        window     = self.get_argument('window', '300')
+        threashold = self.get_argument('threashold', None)
+        name       = self.get_argument('name', None)
 
         window = window and int(window)   
         threashold = threashold and float(threashold)
@@ -724,6 +727,78 @@ Check health of celery queue throughput against set threashold
         }
 
         if threashold and (avg_wait_time + avg_run_time) > threashold:
+            self.set_status(500)
+            self.write(result)
+        else:
+            self.write(result)
+
+class TasksMaxWait(BaseTaskHandler):
+    @web.authenticated
+    def get(self):
+        """
+Check celery queue max wait time of waiting jobs (not scheduled; jobs that will handled as soon as a worker is available)
+
+**Example request**:
+
+.. sourcecode:: http
+
+  GET /api/tasks/max-wait HTTP/1.1
+  Host: localhost:5555
+
+**Example response**:
+
+.. sourcecode:: http
+
+  HTTP/1.1 200 OK
+  Content-Length: 44
+  Content-Type: application/json; charset=UTF-8
+
+  {
+      "waiting_tasks": 20
+      "max_wait_time": 5.2
+      "avg_wait_time": 0.24
+  }
+
+:query name: only compute for tasks with taskname
+:query threashold: an optional parameter that will cause endpoint to throw 500 if result beyond acceptable range
+:reqheader Authorization: optional OAuth token to authenticate
+:statuscode 200: no error
+:statuscode 500: max wait time is above the threashold
+        """
+        threashold = self.get_argument('threashold', None)
+        name       = self.get_argument('name', None)
+
+        threashold = threashold and float(threashold)
+
+        n = 0
+        sum_wait_time = 0
+        max_wait_time = 0
+
+        start = datetime.now() - timedelta(seconds=window)
+        
+        for task_id, task in tasks.iter_tasks(
+                self.application.events,
+                started_start=start):
+            if not task.eta and not task.started and not (name and task.name != name):
+                # Skip any scheduled tasks that have wait times by design
+                # If name param provided, skip tasks that don't match by name
+                n = n + 1
+                wait_time = (datetime.now() - task.received)
+                sum_wait_time = sum_wait_time + wait_time
+                if wait_time > max_wait_time:
+                    max_wait_time = wait_time
+
+        avg_wait_time = 0
+        if n:
+          avg_wait_time = (sum_wait_time / n)
+
+        result = {
+          "count_tasks": n,
+          "max_wait_time": max_wait_time,
+          "avg_wait_time": avg_wait_time
+        }
+
+        if threashold and max_wait_time > threashold:
             self.set_status(500)
             self.write(result)
         else:
